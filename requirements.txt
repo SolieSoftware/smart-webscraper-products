@@ -1,0 +1,30 @@
+# Core LangChain
+langchain==0.3.13
+langchain-core==0.3.28
+langchain-openai==0.2.14
+langchain-anthropic==0.3.3
+
+# Web Scraping
+playwright==1.49.1
+beautifulsoup4==4.12.3
+lxml==5.3.0
+
+# Database
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.0
+
+# Search API
+google-search-results==2.4.2
+
+# Image Processing
+pillow==11.0.0
+requests==2.32.3
+
+# Configuration & Validation
+python-dotenv==1.0.1
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# Utilities
+python-dateutil==2.9.0
