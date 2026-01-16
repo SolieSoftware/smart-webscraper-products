@@ -77,3 +77,6 @@ def main(prompt: str):
         logger.error(f"Error during scraping: {e}", exc_info=True)
         print(f"\nError: {e}")
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()

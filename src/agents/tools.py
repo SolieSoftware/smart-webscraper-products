@@ -1,10 +1,11 @@
 """LangChain tools for web scraping agent."""
 
 import asyncio
+import json
 import logging
-from typing import Type, Optional
+from typing import Optional, List
 
-from langchain.tools import BaseTool
+from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from src.extractors.llm_extractor import extract_company_name, extract_products_from_html
@@ -17,216 +18,234 @@ from src.storage.image_storage import download_images
 logger = logging.getLogger(__name__)
 
 
-# Input schemas for tools
-class SearchInput(BaseModel):
-    """Input for SearchTool."""
-    query: str = Field(..., description="Search query to find company websites")
-    num_results: int = Field(default=5, description="Number of search results to return")
+# Shared state for passing data between tools
+_tool_state = {
+    "last_scraped_data": None,
+    "last_extracted_products": None,
+    "last_company_name": None,
+}
 
 
-class ScrapeInput(BaseModel):
-    """Input for ScrapeTool."""
-    url: str = Field(..., description="URL to scrape")
+@tool
+def search_websites_tool(query: str, num_results: int = 5) -> str:
+    """Search for company websites using a search query.
+
+    Use this to find e-commerce websites based on user requests like
+    'UK clothing retailers' or 'electronics stores USA'.
+
+    Args:
+        query: Search query to find company websites
+        num_results: Number of search results to return (default: 5)
+
+    Returns:
+        A formatted list of relevant website URLs with titles and descriptions.
+    """
+    try:
+        results = search_websites(query, num_results)
+
+        if not results:
+            return "No websites found for the query."
+
+        # Format results as a string
+        output = f"Found {len(results)} websites:\n\n"
+        for i, result in enumerate(results, 1):
+            output += f"{i}. {result['title']}\n"
+            output += f"   URL: {result['url']}\n"
+            output += f"   Snippet: {result['snippet']}\n\n"
+
+        return output
+
+    except Exception as e:
+        logger.error(f"Search tool error: {e}")
+        return f"Error searching websites: {str(e)}"
 
 
-class ExtractInput(BaseModel):
-    """Input for ExtractProductsTool."""
-    html: str = Field(..., description="HTML content to extract products from")
-    url: str = Field(..., description="Source URL of the HTML")
-    company_name: Optional[str] = Field(None, description="Company name")
+@tool
+def scrape_page_tool(url: str) -> str:
+    """Scrape content from a webpage URL.
+
+    Use this to fetch HTML content, images, and links from an e-commerce page.
+    The scraped data will be stored for subsequent extraction.
+
+    Args:
+        url: The URL to scrape
+
+    Returns:
+        A summary of the scraped page including title, image count, and link count.
+    """
+    try:
+        # Run async function in sync context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(_async_scrape(url))
+        loop.close()
+        return result
+
+    except Exception as e:
+        logger.error(f"Scrape tool error: {e}")
+        return f"Error scraping page: {str(e)}"
 
 
-class SaveInput(BaseModel):
-    """Input for SaveProductsTool."""
-    products_json: str = Field(..., description="JSON string of products to save")
-    company_name: Optional[str] = Field(None, description="Company name")
+async def _async_scrape(url: str) -> str:
+    """Async scrape implementation."""
+    async with BrowserManager() as browser:
+        page, error = await browser.navigate_to_url(url)
+
+        if error or not page:
+            return f"Failed to load page: {error}"
+
+        # Scrape the page
+        page_data = await scrape_page(page)
+
+        # Close the page
+        await page.close()
+
+        # Store data in shared state for extraction
+        _tool_state["last_scraped_data"] = page_data
+
+        # Return compact summary (not full HTML to save tokens)
+        output = f"Successfully scraped: {page_data['url']}\n"
+        output += f"Title: {page_data['title']}\n"
+        output += f"Images found: {len(page_data['image_urls'])}\n"
+        output += f"Links found: {len(page_data['links'])}\n"
+        output += f"\nHTML content available for extraction ({len(page_data['html'])} characters)"
+        output += "\n\nUse extract_products to parse the product information from this page."
+
+        return output
 
 
-# Tool implementations
-class SearchTool(BaseTool):
-    """Tool to search for company websites."""
+@tool
+def extract_products_tool(url: str, company_name: Optional[str] = None) -> str:
+    """Extract product information from the most recently scraped page.
 
-    name: str = "search_websites"
-    description: str = (
-        "Search for company websites using a search query. "
-        "Input should be a search query like 'UK clothing retailers' or 'electronics stores USA'. "
-        "Returns a list of relevant website URLs with titles and descriptions."
-    )
-    args_schema: Type[BaseModel] = SearchInput
+    This tool uses AI to intelligently parse product data (names, prices, images)
+    from e-commerce pages. Call this after using scrape_page.
 
-    def _run(self, query: str, num_results: int = 5) -> str:
-        """Execute the search."""
-        try:
-            results = search_websites(query, num_results)
+    Args:
+        url: Source URL of the page (for reference)
+        company_name: Optional company name (will be derived from URL if not provided)
 
-            if not results:
-                return "No websites found for the query."
+    Returns:
+        A formatted list of extracted products with names, prices, and image counts.
+    """
+    try:
+        # Get scraped data from state
+        page_data = _tool_state.get("last_scraped_data")
 
-            # Format results as a string
-            output = f"Found {len(results)} websites:\n\n"
-            for i, result in enumerate(results, 1):
-                output += f"{i}. {result['title']}\n"
-                output += f"   URL: {result['url']}\n"
-                output += f"   Snippet: {result['snippet']}\n\n"
+        if not page_data:
+            return "No scraped data available. Please use scrape_page first."
 
-            return output
+        html = page_data.get("html", "")
+        if not html:
+            return "No HTML content available from the scraped page."
 
-        except Exception as e:
-            logger.error(f"Search tool error: {e}")
-            return f"Error searching websites: {str(e)}"
+        # Derive company name if not provided
+        if not company_name:
+            company_name = extract_company_name(url)
 
+        # Run async extraction
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        products = loop.run_until_complete(
+            extract_products_from_html(html, url, company_name)
+        )
+        loop.close()
 
-class ScrapeTool(BaseTool):
-    """Tool to scrape a webpage."""
+        if not products:
+            return "No products found on this page."
 
-    name: str = "scrape_page"
-    description: str = (
-        "Scrape content from a webpage URL. "
-        "Input should be a valid URL. "
-        "Returns the HTML content, images, and links from the page."
-    )
-    args_schema: Type[BaseModel] = ScrapeInput
+        # Store products in state for saving
+        _tool_state["last_extracted_products"] = products
+        _tool_state["last_company_name"] = company_name
 
-    def _run(self, url: str) -> str:
-        """Execute the scrape."""
-        try:
-            # Run async function in sync context
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(self._async_run(url))
-            loop.close()
-            return result
+        # Format output
+        output = f"Extracted {len(products)} products from {company_name}:\n\n"
+        for i, product in enumerate(products, 1):
+            output += f"{i}. {product.name}\n"
+            output += f"   Price: {product.price} {product.currency}\n"
+            output += f"   Images: {len(product.image_urls)}\n"
+            if product.product_url:
+                output += f"   URL: {product.product_url}\n"
+            output += "\n"
 
-        except Exception as e:
-            logger.error(f"Scrape tool error: {e}")
-            return f"Error scraping page: {str(e)}"
+        output += "\nUse save_products to store these products in the database."
 
-    async def _async_run(self, url: str) -> str:
-        """Async scrape implementation."""
-        async with BrowserManager() as browser:
-            page, error = await browser.navigate_to_url(url)
+        return output
 
-            if error or not page:
-                return f"Failed to load page: {error}"
-
-            # Scrape the page
-            page_data = await scrape_page(page)
-
-            # Close the page
-            await page.close()
-
-            # Return compact summary (not full HTML to save tokens)
-            output = f"Successfully scraped: {page_data['url']}\n"
-            output += f"Title: {page_data['title']}\n"
-            output += f"Images found: {len(page_data['image_urls'])}\n"
-            output += f"Links found: {len(page_data['links'])}\n"
-            output += f"\nHTML content available for extraction ({len(page_data['html'])} characters)"
-
-            # Store HTML in tool context for extraction (we'll return full data)
-            self.last_scraped_data = page_data
-
-            return output
+    except Exception as e:
+        logger.error(f"Extract tool error: {e}")
+        return f"Error extracting products: {str(e)}"
 
 
-class ExtractProductsTool(BaseTool):
-    """Tool to extract products from HTML using LLM."""
+@tool
+def save_products_tool(company_name: Optional[str] = None) -> str:
+    """Save the most recently extracted products to the database.
 
-    name: str = "extract_products"
-    description: str = (
-        "Extract product information (names, prices, images) from scraped HTML content. "
-        "This tool uses AI to intelligently parse product data from e-commerce pages. "
-        "Input should include the HTML content and source URL."
-    )
-    args_schema: Type[BaseModel] = ExtractInput
+    This will download product images and store everything in the database.
+    Call this after using extract_products.
 
-    def _run(self, html: str, url: str, company_name: Optional[str] = None) -> str:
-        """Execute product extraction."""
-        try:
-            # Derive company name if not provided
-            if not company_name:
-                company_name = extract_company_name(url)
+    Args:
+        company_name: Optional company name override
 
-            # Run async extraction
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            products = loop.run_until_complete(
-                extract_products_from_html(html, url, company_name)
-            )
-            loop.close()
+    Returns:
+        Confirmation of how many products were saved.
+    """
+    try:
+        # Get extracted products from state
+        products = _tool_state.get("last_extracted_products")
 
-            if not products:
-                return "No products found on this page."
+        if not products:
+            return "No extracted products available. Please use extract_products first."
 
-            # Store products for saving
-            self.last_extracted_products = products
-            self.last_company_name = company_name
+        # Use stored company name if not provided
+        if not company_name:
+            company_name = _tool_state.get("last_company_name", "Unknown")
 
-            # Format output
-            output = f"Extracted {len(products)} products from {company_name}:\n\n"
-            for i, product in enumerate(products, 1):
-                output += f"{i}. {product.name}\n"
-                output += f"   Price: {product.price} {product.currency}\n"
-                output += f"   Images: {len(product.image_urls)}\n"
-                if product.product_url:
-                    output += f"   URL: {product.product_url}\n"
-                output += "\n"
+        # Process and save products
+        saved_count = 0
+        with get_db() as db:
+            for product in products:
+                # Download images
+                image_urls = product.image_urls if hasattr(product, 'image_urls') else []
+                local_image_paths = download_images(image_urls, max_images=3)
 
-            return output
+                # Prepare product data for database
+                product_dict = {
+                    "name": product.name,
+                    "price": product.price,
+                    "currency": getattr(product, 'currency', 'USD'),
+                    "image_paths": local_image_paths,
+                    "source_url": getattr(product, 'product_url', '') or "",
+                    "company_name": company_name,
+                    "metadata": {
+                        "original_image_urls": image_urls,
+                    },
+                }
 
-        except Exception as e:
-            logger.error(f"Extract tool error: {e}")
-            return f"Error extracting products: {str(e)}"
+                # Save using database function
+                count = save_products([product_dict], db)
+                saved_count += count
+
+        # Clear state after saving
+        _tool_state["last_extracted_products"] = None
+        _tool_state["last_company_name"] = None
+
+        return f"Successfully saved {saved_count} products to database with images downloaded."
+
+    except Exception as e:
+        logger.error(f"Save tool error: {e}")
+        return f"Error saving products: {str(e)}"
 
 
-class SaveProductsTool(BaseTool):
-    """Tool to save products to database."""
+def get_scraper_tools() -> List:
+    """Get all scraper tools for the agent.
 
-    name: str = "save_products"
-    description: str = (
-        "Save extracted products to the database with downloaded images. "
-        "Input should be the products data from extraction and company name. "
-        "This will download product images and store everything in PostgreSQL."
-    )
-    args_schema: Type[BaseModel] = SaveInput
-
-    def _run(self, products_json: str, company_name: Optional[str] = None) -> str:
-        """Execute save operation."""
-        try:
-            import json
-
-            # Parse products from JSON
-            products_data = json.loads(products_json)
-
-            if not products_data:
-                return "No products to save."
-
-            # Process and save products
-            saved_count = 0
-            with get_db() as db:
-                for product in products_data:
-                    # Download images
-                    image_urls = product.get("image_urls", [])
-                    local_image_paths = download_images(image_urls, max_images=3)
-
-                    # Prepare product data for database
-                    product_dict = {
-                        "name": product.get("name"),
-                        "price": product.get("price"),
-                        "currency": product.get("currency", "USD"),
-                        "image_paths": local_image_paths,
-                        "source_url": product.get("product_url") or product.get("url", ""),
-                        "company_name": company_name or "Unknown",
-                        "metadata": {
-                            "original_image_urls": image_urls,
-                        },
-                    }
-
-                    # Save using database function
-                    count = save_products([product_dict], db)
-                    saved_count += count
-
-            return f"Successfully saved {saved_count} products to database with images downloaded."
-
-        except Exception as e:
-            logger.error(f"Save tool error: {e}")
-            return f"Error saving products: {str(e)}"
+    Returns:
+        List of tool functions
+    """
+    return [
+        search_websites_tool,
+        scrape_page_tool,
+        extract_products_tool,
+        save_products_tool,
+    ]

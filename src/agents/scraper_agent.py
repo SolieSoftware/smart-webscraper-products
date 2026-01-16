@@ -3,19 +3,15 @@
 import asyncio
 import json
 import logging
-from typing import List
+from typing import List, Optional
 
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import PromptTemplate
+from langchain.agents import create_tool_calling_agent
+from langchain_core.agents import AgentExecutor
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 
-from src.agents.tools import (
-    SearchTool,
-    ScrapeTool,
-    ExtractProductsTool,
-    SaveProductsTool,
-)
+from src.agents.tools import get_scraper_tools
 from src.config import settings
 from src.extractors.llm_extractor import extract_company_name, extract_products_from_html
 from src.scrapers.browser import BrowserManager
@@ -27,49 +23,26 @@ from src.storage.image_storage import download_images
 logger = logging.getLogger(__name__)
 
 
-# Agent prompt template
-AGENT_PROMPT = """
-        You are an intelligent web scraping agent specialized in extracting product information from e-commerce websites.
+# System prompt for the agent
+SYSTEM_PROMPT = """You are an intelligent web scraping agent specialized in extracting product information from e-commerce websites.
 
-        Your goal is to help users find and extract product data (names, prices, images) from company websites based on their requests.
+Your goal is to help users find and extract product data (names, prices, images) from company websites based on their requests.
 
-        You have access to the following tools:
+When given a task like "Retrieve Clothing products in the UK", follow this workflow:
 
-        {tools}
+1. Use search_websites to find relevant company websites
+2. For each promising website:
+   - Use scrape_page to get the page content
+   - Use extract_products to parse product information using AI
+   - Use save_products to store the data in the database
+3. Report a summary of products found and saved
 
-        Tool Names: {tool_names}
-
-        When given a task like "Retrieve Clothing products in the UK", follow this workflow:
-
-        1. Use search_websites to find relevant company websites
-        2. For each promising website:
-        - Use scrape_page to get the page content
-        - Use extract_products to parse product information using AI
-        - Use save_products to store the data in the database
-        3. Report a summary of products found and saved
-
-        Be systematic and thorough. Handle errors gracefully and try alternative approaches if something fails.
-
-        Use the following format:
-
-        Question: the input question or task
-        Thought: think about what to do next
-        Action: the action to take (one of [{tool_names}])
-        Action Input: the input to the action
-        Observation: the result of the action
-        ... (repeat Thought/Action/Action Input/Observation as needed)
-        Thought: I now have completed the task
-        Final Answer: a summary of what was accomplished
-
-        Begin!
-
-        Question: {input}
-        Thought: {agent_scratchpad}"""
+Be systematic and thorough. Handle errors gracefully and try alternative approaches if something fails."""
 
 
-def create_scraper_agent():
+def create_scraper_agent() -> AgentExecutor:
     """
-    Create the web scraper agent with all tools.
+    Create the web scraper agent with all tools using the modern tool-calling approach.
 
     Returns:
         AgentExecutor instance
@@ -92,19 +65,18 @@ def create_scraper_agent():
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
-    # Initialize tools
-    tools = [
-        SearchTool(),
-        ScrapeTool(),
-        ExtractProductsTool(),
-        SaveProductsTool(),
-    ]
+    # Get tools
+    tools = get_scraper_tools()
 
-    # Create prompt
-    prompt = PromptTemplate.from_template(AGENT_PROMPT)
+    # Create prompt with chat message format for tool-calling
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT),
+        ("human", "{input}"),
+        MessagesPlaceholder(variable_name="agent_scratchpad"),
+    ])
 
-    # Create agent
-    agent = create_react_agent(llm, tools, prompt)
+    # Create tool-calling agent
+    agent = create_tool_calling_agent(llm, tools, prompt)
 
     # Create executor
     agent_executor = AgentExecutor(
