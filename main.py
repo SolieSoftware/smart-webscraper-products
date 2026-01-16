@@ -97,16 +97,16 @@ def main():
         description="Smart Web Scraper - AI-powered product information extraction",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  python main.py "Retrieve Clothing products in the UK"
-  python main.py "Find electronics from US retailers"
-  python main.py "Search for furniture stores in Canada"
+            Examples:
+            python main.py "Retrieve Clothing products in the UK"
+            python main.py "Find electronics from US retailers"
+            python main.py "Search for furniture stores in Canada"
 
-The scraper will:
-  1. Search for relevant company websites
-  2. Scrape product information (names, prices, images)
-  3. Store data in PostgreSQL database
-  4. Download product images locally
+            The scraper will:
+            1. Search for relevant company websites
+            2. Scrape product information (names, prices, images)
+            3. Store data in PostgreSQL database
+            4. Download product images locally
         """,
     )
 

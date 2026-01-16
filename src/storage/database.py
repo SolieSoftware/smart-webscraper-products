@@ -10,9 +10,9 @@ from src.config import settings
 from src.storage.models import Base
 
 
-# Create database engine
+# Create database engine using the appropriate database URL
 engine = create_engine(
-    settings.database_url,
+    settings.get_database_url(),
     pool_pre_ping=True,  # Verify connections before using
     echo=False,  # Set to True for SQL query logging
 )

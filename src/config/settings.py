@@ -26,9 +26,27 @@ class Settings(BaseSettings):
     serpapi_api_key: str = Field(..., description="SerpAPI key for web search")
 
     # Database
-    database_url: str = Field(
-        default="postgresql://localhost:5432/webscraper_products",
-        description="PostgreSQL connection string"
+    database_url: Optional[str] = Field(
+        default=None,
+        description="PostgreSQL connection string (used if Supabase not configured)"
+    )
+
+    # Supabase Configuration
+    supabase_project_url: Optional[str] = Field(
+        default=None,
+        description="Supabase project URL"
+    )
+    supabase_project_api: Optional[str] = Field(
+        default=None,
+        description="Supabase API key (anon/public key)"
+    )
+    supabase_db_password: Optional[str] = Field(
+        default=None,
+        description="Supabase database password for direct PostgreSQL connection"
+    )
+    supabase_storage_bucket: str = Field(
+        default="product-images",
+        description="Supabase storage bucket name for images"
     )
 
     # Storage
@@ -77,6 +95,30 @@ class Settings(BaseSettings):
             return "anthropic"
         else:
             raise ValueError("No LLM API key configured")
+
+    def is_supabase_configured(self) -> bool:
+        """Check if Supabase is configured."""
+        return bool(self.supabase_project_url and self.supabase_project_api)
+
+    def get_database_url(self) -> str:
+        """Get the database URL, preferring Supabase if configured."""
+        if self.is_supabase_configured() and self.supabase_db_password:
+            # Extract project ref from Supabase URL
+            # URL format: https://<project_ref>.supabase.co
+            project_ref = self.supabase_project_url.replace("https://", "").replace(".supabase.co", "")
+            # Supabase PostgreSQL connection string format
+            return f"postgresql://postgres.{project_ref}:{self.supabase_db_password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+        elif self.database_url:
+            return self.database_url
+        else:
+            raise ValueError(
+                "No database configured. Set DATABASE_URL or Supabase credentials "
+                "(SUPABASE_PROJECT_URL, SUPABASE_PROJECT_API, SUPABASE_DB_PASSWORD)"
+            )
+
+    def use_supabase_storage(self) -> bool:
+        """Check if Supabase storage should be used for images."""
+        return self.is_supabase_configured()
 
 
 # Global settings instance
