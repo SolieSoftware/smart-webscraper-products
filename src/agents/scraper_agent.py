@@ -5,9 +5,7 @@ import json
 import logging
 from typing import List, Optional
 
-from langchain.agents import create_tool_calling_agent
-from langchain_core.agents import AgentExecutor
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 
@@ -30,22 +28,22 @@ Your goal is to help users find and extract product data (names, prices, images)
 
 When given a task like "Retrieve Clothing products in the UK", follow this workflow:
 
-1. Use search_websites to find relevant company websites
+1. Use search_websites_tool to find relevant company websites
 2. For each promising website:
-   - Use scrape_page to get the page content
-   - Use extract_products to parse product information using AI
-   - Use save_products to store the data in the database
+   - Use scrape_page_tool to get the page content
+   - Use extract_products_tool to parse product information using AI
+   - Use save_products_tool to store the data in the database
 3. Report a summary of products found and saved
 
 Be systematic and thorough. Handle errors gracefully and try alternative approaches if something fails."""
 
 
-def create_scraper_agent() -> AgentExecutor:
+def create_scraper_agent():
     """
-    Create the web scraper agent with all tools using the modern tool-calling approach.
+    Create the web scraper agent with all tools using the modern LangGraph-based approach.
 
     Returns:
-        AgentExecutor instance
+        CompiledStateGraph - a runnable agent graph
     """
     # Get LLM based on configuration
     provider = settings.get_llm_provider()
@@ -68,26 +66,35 @@ def create_scraper_agent() -> AgentExecutor:
     # Get tools
     tools = get_scraper_tools()
 
-    # Create prompt with chat message format for tool-calling
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
-        ("human", "{input}"),
-        MessagesPlaceholder(variable_name="agent_scratchpad"),
-    ])
-
-    # Create tool-calling agent
-    agent = create_tool_calling_agent(llm, tools, prompt)
-
-    # Create executor
-    agent_executor = AgentExecutor(
-        agent=agent,
+    # Create agent using the new LangGraph-based create_agent
+    # This returns a CompiledStateGraph that can be invoked directly
+    agent = create_agent(
+        model=llm,
         tools=tools,
-        verbose=True,
-        max_iterations=15,
-        handle_parsing_errors=True,
+        system_prompt=SYSTEM_PROMPT,
     )
 
-    return agent_executor
+    return agent
+
+
+def invoke_scraper_agent(prompt: str) -> dict:
+    """
+    Invoke the scraper agent with a user prompt using the LangGraph agent.
+
+    Args:
+        prompt: User prompt like "Retrieve Clothing products in the UK"
+
+    Returns:
+        Dictionary with agent response
+    """
+    agent = create_scraper_agent()
+
+    # Invoke the agent - LangGraph agents use messages format
+    result = agent.invoke({
+        "messages": [{"role": "user", "content": prompt}]
+    })
+
+    return result
 
 
 async def run_scraper_agent(prompt: str) -> dict:
