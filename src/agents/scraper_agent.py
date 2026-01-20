@@ -56,7 +56,7 @@ def create_scraper_agent():
         )
     elif provider == "anthropic":
         llm = ChatAnthropic(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             temperature=settings.llm_temperature,
             api_key=settings.anthropic_api_key,
         )

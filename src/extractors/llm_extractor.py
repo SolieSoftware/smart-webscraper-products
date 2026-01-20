@@ -55,7 +55,7 @@ def get_llm_client():
         )
     elif provider == "anthropic":
         return ChatAnthropic(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             temperature=settings.llm_temperature,
             api_key=settings.anthropic_api_key,
         )
@@ -115,6 +115,10 @@ async def extract_products_from_html(
         # Clean HTML for LLM processing
         cleaned_html = clean_html(html)
 
+        # Debug: log cleaned HTML sample
+        logger.debug(f"Cleaned HTML length: {len(cleaned_html)}")
+        logger.debug(f"Cleaned HTML sample (first 1000 chars): {cleaned_html[:1000]}")
+
         # Create LLM client
         llm = get_llm_client()
 
@@ -164,6 +168,9 @@ Return only the JSON array of products.""")
 
         # Parse response
         response_text = response.content.strip()
+
+        # Debug: log LLM response
+        logger.debug(f"LLM response: {response_text[:2000]}")
 
         # Try to extract JSON from response
         json_match = re.search(r"\[.*\]", response_text, re.DOTALL)

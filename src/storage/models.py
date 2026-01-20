@@ -41,7 +41,7 @@ class Product(Base):
         default=datetime.utcnow,
         index=True
     )
-    metadata = Column(JSONB, nullable=True, default=dict)
+    # metadata = Column(JSONB, nullable=True, default=dict)
 
     # Indexes for common queries
     __table_args__ = (

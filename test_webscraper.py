@@ -27,12 +27,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main(prompt: str):
+def main():
     """
     Main async function to run the scraper.
 
     Args:
         prompt: User prompt for scraping
+    """
+    prompt = """
+    Collect product information for popular clothing websites including: 
+    UK Clothing Sites:
+    - https://www.next.co.uk/shop/gender-women-productaffiliation-clothing
+    - https://www.boohoo.com/womens/clothing
+    - https://www.prettylittlething.us/sale-us.html
+    - https://www.riverisland.com/women/clothing
     """
     try:
         # Run the agent
