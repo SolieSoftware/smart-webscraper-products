@@ -35,12 +35,7 @@ def main():
         prompt: User prompt for scraping
     """
     prompt = """
-    Collect product information for popular clothing websites including: 
-    UK Clothing Sites:
-    - https://www.next.co.uk/shop/gender-women-productaffiliation-clothing
-    - https://www.boohoo.com/womens/clothing
-    - https://www.prettylittlething.us/sale-us.html
-    - https://www.riverisland.com/women/clothing
+    Mens Clothing London based retailers that sell suits and formal wear.
     """
     try:
         # Run the agent

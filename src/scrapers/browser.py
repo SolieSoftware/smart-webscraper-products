@@ -69,7 +69,7 @@ class BrowserManager:
         """
         if not self.browser:
             await self.start()
-
+        
         page = await self.browser.new_page()
 
         # Set realistic user agent
@@ -115,7 +115,6 @@ class BrowserManager:
             try:
                 logger.info(f"Navigating to {url} (attempt {attempt + 1}/{retries})")
                 page = await self.new_page()
-
                 await page.goto(url, wait_until=wait_until, timeout=timeout)
 
                 # Add a small delay to be respectful

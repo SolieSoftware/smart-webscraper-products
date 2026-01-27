@@ -22,11 +22,18 @@ def search_websites(query: str, num_results: int = 5) -> List[Dict[str, Any]]:
         List of search results with URL and metadata
     """
     try:
-        search = GoogleSearch({
+        params = {
+            "engine": "google",
             "q": query,
             "api_key": settings.serpapi_api_key,
             "num": num_results,
-        })
+            "location": "Greater London,England,United Kingdom",
+            "google_domain": "google.co.uk",
+            "hl": "en",
+            "gl": "uk",
+        }
+
+        search = GoogleSearch(params)
 
         results = search.get_dict()
         organic_results = results.get("organic_results", [])
@@ -43,6 +50,7 @@ def search_websites(query: str, num_results: int = 5) -> List[Dict[str, Any]]:
             websites.append(website)
 
         logger.info(f"Found {len(websites)} websites for query: {query}")
+        logger.info(f"Websites: {websites}")
         return websites
 
     except Exception as e:

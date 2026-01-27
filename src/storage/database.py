@@ -9,6 +9,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from src.config import settings
 from src.storage.models import Base
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 # Create database engine using the appropriate database URL
 engine = create_engine(
@@ -61,8 +64,9 @@ def save_products(products: list, db: Session) -> int:
 
     saved_count = 0
     for product_data in products:
-        # Check if product already exists (by URL and company)
+        # Check if product already exists (by name, URL and company)
         existing = db.query(Product).filter(
+            Product.name == product_data.get("name"),
             Product.source_url == product_data.get("source_url"),
             Product.company_name == product_data.get("company_name")
         ).first()
@@ -71,6 +75,5 @@ def save_products(products: list, db: Session) -> int:
             product = Product(**product_data)
             db.add(product)
             saved_count += 1
-
-    db.commit()
+    logger.info(f"Saving {saved_count} new products to the database.")
     return saved_count

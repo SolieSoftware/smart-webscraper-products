@@ -116,7 +116,7 @@ async def run_scraper_agent(prompt: str) -> dict:
         # Step 1: Search for websites
         logger.info("Searching for relevant websites...")
         search_query = prompt  # Use prompt directly as search query
-        websites = search_websites(search_query, num_results=3)
+        websites = search_websites(search_query, num_results=10)
 
         if not websites:
             return {
