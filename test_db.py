@@ -2,9 +2,13 @@
 from src.storage.database import get_db, save_products
 from src.storage.image_storage import download_images
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 products = [
     {
-        "name": "Test Vest",
+    "name": "Test Vest",
      "price": 2.05,
      "currency": "GBP",
      "image_paths": [],
@@ -17,6 +21,7 @@ products = [
      }
 ]
 
+all_products = []
 
 with get_db() as db:
     for product in products:
@@ -47,5 +52,5 @@ with get_db() as db:
 logger.info(f"Saved {len(products)} products from {company_name}")
 
 except Exception as e:
-logger.error(f"Error processing {url}: {e}")
-continue
+    logger.error(f"Error processing {url}: {e}")
+    continue
