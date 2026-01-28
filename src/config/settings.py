@@ -107,7 +107,7 @@ class Settings(BaseSettings):
             # URL format: https://<project_ref>.supabase.co
             project_ref = self.supabase_project_url.replace("https://", "").replace(".supabase.co", "")
             # Supabase PostgreSQL connection string format
-            return f"postgresql://postgres.{project_ref}:{self.supabase_db_password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+            return self.database_url
         elif self.database_url:
             return self.database_url
         else:
