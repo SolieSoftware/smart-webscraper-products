@@ -59,6 +59,29 @@ class BrowserManager:
             await self.playwright.stop()
         self._is_running = False
         logger.info("Browser stopped")
+    
+    async def route_intercept(self, route):
+        request = route.request
+        resource_type = request.resource_type
+        url = request.url
+
+        blocked_domains = [
+            "google-analytics", "doubleclick", "facebook.com/tr", "criteo", "hotjar", "sentry"
+        ]
+
+        if any(domain in url for domain in blocked_domains):
+            await route.abort()
+            return 
+        
+        if resource_type in ["image", "media"]:
+            await route.abort()
+            return
+    
+        if resource_type == "font":
+            await route.continue_()
+            return
+        
+        await route.continue_90
 
     async def new_page(self) -> Page:
         """
@@ -89,7 +112,7 @@ class BrowserManager:
     async def navigate_to_url(
         self,
         url: str,
-        wait_until: str = "networkidle",
+        wait_until: str = "domcontentloaded",
         timeout: int = 30000,
         retries: int = None
     ) -> tuple[Optional[Page], Optional[str]]:
