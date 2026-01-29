@@ -55,6 +55,7 @@ products = [
 ]
 
 all_products = []
+total_saved = 0
 
 with get_db() as db:
     for product in products:
@@ -82,4 +83,4 @@ with get_db() as db:
         total_saved += saved
         all_products.append(product_dict)
 
-logger.info(f"Saved {len(products)} products from {company_name}")
+logger.info(f"Saved {len(products)} products {products}")
