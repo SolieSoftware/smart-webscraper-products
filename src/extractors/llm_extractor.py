@@ -78,8 +78,35 @@ def clean_html(html: str, max_length: int = 50000) -> str:
         soup = BeautifulSoup(html, "lxml")
 
         # Remove script, style, and other non-content tags
-        for tag in soup(["script", "style", "meta", "link", "noscript"]):
+        for tag in soup(["script", "style", "meta", "noscript"]):
             tag.decompose()
+
+        # Replace img tags with a text placeholder preserving the src URL
+        for img in soup.find_all("img"):
+            # Check multiple attributes where image URLs can live
+            src = None
+            for attr in ["src", "data-src", "data-lazy-src", "data-original"]:
+                candidate = img.get(attr, "")
+                if candidate and (candidate.startswith("http") or candidate.startswith("//")):
+                    src = candidate
+                    break
+
+            # Fall back to first srcset entry
+            if not src:
+                srcset = img.get("srcset", "")
+                if srcset:
+                    first_entry = srcset.split(",")[0].strip().split(" ")[0]
+                    if first_entry.startswith("http") or first_entry.startswith("//"):
+                        src = first_entry
+
+            # Normalize protocol-relative URLs to https
+            if src and src.startswith("//"):
+                src = "https:" + src
+
+            if src:
+                img.replace_with(f"[IMAGE: {src}]")
+            else:
+                img.decompose()
 
         # Get text with some structure preserved
         text = soup.get_text(separator="\n", strip=True)
@@ -125,42 +152,46 @@ async def extract_products_from_html(
         # System message with instructions
         system_msg = SystemMessage(content="""You are an expert at extracting product information from e-commerce websites.
 
-Your task is to analyze the provided HTML content and extract all product listings you can find.
+            Your task is to analyze the provided HTML content and extract all product listings you can find.
 
-For each product, extract:
-1. Product name (required)
-2. Price (as a number, required if available)
-3. Currency (e.g., USD, GBP, EUR)
-4. Image URLs (list of product image URLs)
-5. Product URL (direct link to product page, if available)
+            For each product, extract:
+            1. Product name (required)
+            2. Price (as a number, required if available)
+            3. Currency (e.g., USD, GBP, EUR)
+            4. Image URLs (list of product image URLs)
+            5. Product URL (direct link to product page, if available)
 
-Return the data as a JSON array of products. Each product should be a JSON object with the fields: name, price, currency, image_urls, product_url.
+            Return the data as a JSON array of products. Each product should be a JSON object with the fields: name, price, currency, image_urls, product_url.
 
-If no products are found, return an empty array [].
+            If no products are found, return an empty array [].
 
-Example format:
-[
-  {
-    "name": "Cotton T-Shirt",
-    "price": 29.99,
-    "currency": "USD",
-    "image_urls": ["https://example.com/img1.jpg"],
-    "product_url": "https://example.com/product/123"
-  }
-]
+            Example format:
+            [
+            {
+                "name": "Cotton T-Shirt",
+                "price": 29.99,
+                "currency": "USD",
+                "image_urls": ["https://example.com/img1.jpg"],
+                "product_url": "https://example.com/product/123"
+            }
+            ]
 
-Only return the JSON array, nothing else.""")
+            Only return the JSON array, nothing else.""")
 
-        # User message with HTML content
+                    # User message with HTML content
         user_msg = HumanMessage(content=f"""Extract all products from this e-commerce page.
 
-URL: {url}
-Company: {company_name or "Unknown"}
+            URL: {url}
+            Company: {company_name or "Unknown"}
 
-HTML Content:
-{cleaned_html}
+            HTML Content:
+            {cleaned_html}
 
-Return only the JSON array of products.""")
+            Return only the JSON array of products.""")
+        
+        with open("debug_llm_input.txt", "w", encoding="utf-8") as f:
+            f.write(f"System Message:\n{system_msg.content}\n\n")
+            f.write(f"User Message:\n{user_msg.content}\n")
 
         # Invoke LLM
         logger.info(f"Extracting products from {url} using LLM...")
@@ -170,7 +201,7 @@ Return only the JSON array of products.""")
         response_text = response.content.strip()
 
         # Debug: log LLM response
-        logger.debug(f"LLM response: {response_text[:2000]}")
+        logger.info(f"LLM response: {response_text[:2000]}")
 
         # Try to extract JSON from response
         json_match = re.search(r"\[.*\]", response_text, re.DOTALL)

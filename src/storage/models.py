@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+
 
 from sqlalchemy import DECIMAL, TIMESTAMP, Column, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -56,16 +56,3 @@ class Product(Base):
             f"price={self.price}, company='{self.company_name}')>"
         )
 
-    def to_dict(self) -> dict:
-        """Convert product to dictionary."""
-        return {
-            "id": str(self.id),
-            "name": self.name,
-            "price": float(self.price) if self.price else None,
-            "currency": self.currency,
-            "image_paths": self.image_paths or [],
-            "source_url": self.source_url,
-            "company_name": self.company_name,
-            "scraped_at": self.scraped_at.isoformat() if self.scraped_at else None,
-            "metadata": self.metadata or {},
-        }

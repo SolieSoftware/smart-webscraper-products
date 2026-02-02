@@ -35,7 +35,7 @@ def main():
         prompt: User prompt for scraping
     """
     prompt = """
-    Mens Clothing London based retailers that sell suits and formal wear.
+    London wear smart blazers.
     """
     try:
         # Run the agent

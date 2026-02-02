@@ -1,16 +1,7 @@
-"""Main LangChain agent orchestrator for web scraping."""
+"""Main orchestrator for web scraping."""
 
-import asyncio
-import json
 import logging
-from typing import List, Optional
 
-from langchain.agents import create_agent
-from langchain_anthropic import ChatAnthropic
-from langchain_openai import ChatOpenAI
-
-from src.agents.tools import get_scraper_tools
-from src.config import settings
 from src.extractors.llm_extractor import extract_company_name, extract_products_from_html
 from src.scrapers.browser import BrowserManager
 from src.scrapers.page_scraper import scrape_page
@@ -21,88 +12,12 @@ from src.storage.image_storage import download_images
 logger = logging.getLogger(__name__)
 
 
-# System prompt for the agent
-SYSTEM_PROMPT = """You are an intelligent web scraping agent specialized in extracting product information from e-commerce websites.
-
-Your goal is to help users find and extract product data (names, prices, images) from company websites based on their requests.
-
-When given a task like "Retrieve Clothing products in the UK", follow this workflow:
-
-1. Use search_websites_tool to find relevant company websites
-2. For each promising website:
-   - Use scrape_page_tool to get the page content
-   - Use extract_products_tool to parse product information using AI
-   - Use save_products_tool to store the data in the database
-3. Report a summary of products found and saved
-
-Be systematic and thorough. Handle errors gracefully and try alternative approaches if something fails."""
-
-
-def create_scraper_agent():
-    """
-    Create the web scraper agent with all tools using the modern LangGraph-based approach.
-
-    Returns:
-        CompiledStateGraph - a runnable agent graph
-    """
-    # Get LLM based on configuration
-    provider = settings.get_llm_provider()
-
-    if provider == "openai":
-        llm = ChatOpenAI(
-            model=settings.llm_model,
-            temperature=settings.llm_temperature,
-            api_key=settings.openai_api_key,
-        )
-    elif provider == "anthropic":
-        llm = ChatAnthropic(
-            model="claude-sonnet-4-20250514",
-            temperature=settings.llm_temperature,
-            api_key=settings.anthropic_api_key,
-        )
-    else:
-        raise ValueError(f"Unsupported LLM provider: {provider}")
-
-    # Get tools
-    tools = get_scraper_tools()
-
-    # Create agent using the new LangGraph-based create_agent
-    # This returns a CompiledStateGraph that can be invoked directly
-    agent = create_agent(
-        model=llm,
-        tools=tools,
-        system_prompt=SYSTEM_PROMPT,
-    )
-
-    return agent
-
-
-def invoke_scraper_agent(prompt: str) -> dict:
-    """
-    Invoke the scraper agent with a user prompt using the LangGraph agent.
-
-    Args:
-        prompt: User prompt like "Retrieve Clothing products in the UK"
-
-    Returns:
-        Dictionary with agent response
-    """
-    agent = create_scraper_agent()
-
-    # Invoke the agent - LangGraph agents use messages format
-    result = agent.invoke({
-        "messages": [{"role": "user", "content": prompt}]
-    })
-
-    return result
-
-
 async def run_scraper_agent(prompt: str) -> dict:
     """
     Run the scraper agent with a user prompt.
 
-    This is a simplified version that directly orchestrates the scraping
-    without using the full agent (for better control and reliability).
+    This directly orchestrates the scraping workflow:
+    search -> scrape -> extract -> download images -> save.
 
     Args:
         prompt: User prompt like "Retrieve Clothing products in the UK"
@@ -116,7 +31,7 @@ async def run_scraper_agent(prompt: str) -> dict:
         # Step 1: Search for websites
         logger.info("Searching for relevant websites...")
         search_query = prompt  # Use prompt directly as search query
-        websites = search_websites(search_query, num_results=10)
+        websites = search_websites(search_query, num_results=1)
 
         if not websites:
             return {

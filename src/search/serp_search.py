@@ -58,27 +58,3 @@ def search_websites(query: str, num_results: int = 5) -> List[Dict[str, Any]]:
         return []
 
 
-def is_ecommerce_url(url: str) -> bool:
-    """
-    Heuristic to determine if a URL is likely an e-commerce site.
-
-    Args:
-        url: URL to check
-
-    Returns:
-        True if URL appears to be e-commerce related
-    """
-    ecommerce_indicators = [
-        "/products",
-        "/shop",
-        "/store",
-        "/catalog",
-        "/collection",
-        "/buy",
-        "product",
-        "shop",
-        "store",
-    ]
-
-    url_lower = url.lower()
-    return any(indicator in url_lower for indicator in ecommerce_indicators)

@@ -19,23 +19,42 @@ async def scrape_page(page: Page) -> Dict[str, Any]:
         Dictionary containing page content and metadata
     """
     try:
+        # Scroll down the page to trigger lazy-loaded images
+        await page.evaluate("""
+            async () => {
+                const delay = ms => new Promise(r => setTimeout(r, ms));
+                for (let i = 0; i < document.body.scrollHeight; i += 400) {
+                    window.scrollTo(0, i);
+                    await delay(100);
+                }
+                window.scrollTo(0, 0);
+            }
+        """)
+
         # Get page title
         title = await page.title()
 
         # Get page URL
         url = page.url
 
-        # Get page HTML content (limited to body to reduce size)
+        # Get page HTML content after lazy images have loaded
         body_html = await page.content()
 
         # Try to extract structured data (JSON-LD)
         structured_data = await extract_structured_data(page)
 
-        # Get all image URLs on the page
+        # Get all image URLs on the page (including lazy-loaded attributes)
         image_urls = await page.evaluate("""
             () => {
                 const images = Array.from(document.querySelectorAll('img'));
-                return images.map(img => img.src).filter(src => src && src.startsWith('http'));
+                return images.map(img => {
+                    return img.src
+                        || img.getAttribute('data-src')
+                        || img.getAttribute('data-lazy-src')
+                        || img.getAttribute('data-original')
+                        || (img.srcset ? img.srcset.split(',')[0].trim().split(' ')[0] : '')
+                        || '';
+                }).filter(src => src && src.startsWith('http'));
             }
         """)
 
@@ -105,56 +124,3 @@ async def extract_structured_data(page: Page) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def find_product_links(page: Page) -> list[str]:
-    """
-    Find product page links on the current page.
-
-    Args:
-        page: Playwright page object
-
-    Returns:
-        List of product URLs
-    """
-    try:
-        product_links = await page.evaluate("""
-            () => {
-                const anchors = Array.from(document.querySelectorAll('a[href]'));
-                const productKeywords = ['product', 'item', 'p/', '/pd/', '/dp/', 'shop'];
-
-                return anchors
-                    .map(a => a.href)
-                    .filter(href => {
-                        const lowerHref = href.toLowerCase();
-                        return productKeywords.some(keyword => lowerHref.includes(keyword));
-                    })
-                    .filter((href, index, self) => self.indexOf(href) === index); // Unique
-            }
-        """)
-
-        logger.info(f"Found {len(product_links)} potential product links")
-        return product_links[:20]  # Limit to first 20 product links
-
-    except Exception as e:
-        logger.error(f"Error finding product links: {e}")
-        return []
-
-
-async def extract_text_content(page: Page, selector: str) -> Optional[str]:
-    """
-    Extract text content from page using CSS selector.
-
-    Args:
-        page: Playwright page object
-        selector: CSS selector
-
-    Returns:
-        Extracted text or None
-    """
-    try:
-        element = await page.query_selector(selector)
-        if element:
-            return await element.inner_text()
-        return None
-    except Exception as e:
-        logger.debug(f"Could not extract text from selector {selector}: {e}")
-        return None
